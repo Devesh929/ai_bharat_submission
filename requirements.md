@@ -2,203 +2,172 @@
 
 ## Introduction
 
-DisputePack AI is a GenAI-powered evidence kit assistant that helps online merchants win returns and chargeback disputes by transforming scattered information into submission-ready evidence packs. The system automates evidence collection, fact extraction, timeline generation, completeness validation, response drafting, and document packaging while ensuring privacy compliance and submission quality.
+DisputePack AI is a GenAI-powered evidence kit assistant that helps online merchants win returns and chargeback disputes by transforming scattered information into submission-ready evidence packages. The system automates evidence collection, fact extraction, timeline construction, completeness validation, and response drafting to reduce operational effort and prevent revenue leakage.
 
 ## Glossary
 
-- **Merchant**: An online seller who receives dispute claims from customers or payment processors
-- **Dispute**: A formal claim filed by a customer challenging a transaction (returns, chargebacks, refunds)
+- **Merchant**: An online seller who receives dispute notifications and must respond with evidence
+- **Dispute**: A customer-initiated challenge to a transaction (chargeback or return request)
 - **Evidence_Pack**: A complete submission package containing response letter, timeline, exhibit index, and labeled attachments
-- **Intake_System**: The component that receives documents via WhatsApp, email, or direct upload
-- **Orchestrator**: The AWS Lambda-based component that coordinates processing workflows
-- **Document_Processor**: The component using Amazon Textract for OCR and text extraction
-- **Fact_Extractor**: The component using Amazon Comprehend and Bedrock to identify key information
+- **Intake_System**: The component that receives files and messages via WhatsApp, email, or direct upload
+- **Extraction_Engine**: The component that reads documents and extracts structured facts
 - **Timeline_Builder**: The component that constructs chronological event sequences
-- **Completeness_Checker**: The component that validates evidence against dispute-type playbooks
+- **Completeness_Checker**: The component that validates evidence against dispute-type requirements
 - **Response_Drafter**: The component that generates policy-grounded dispute responses
-- **Privacy_Redactor**: The component using Amazon Comprehend for PII detection and redaction
+- **Redaction_Service**: The component that identifies and masks sensitive personal information
+- **Case_Tracker**: The system that maintains dispute case state and metadata
 - **Playbook**: A dispute-type-specific checklist of required evidence and response patterns
-- **Case**: A single dispute instance tracked in DynamoDB with associated documents and metadata
-- **Exhibit**: A labeled piece of evidence (invoice, delivery proof, screenshot, etc.)
+- **PII**: Personally Identifiable Information requiring privacy protection
+- **POD**: Proof of Delivery documentation from courier services
+- **OCR_Service**: Optical Character Recognition service for extracting text from images
 
 ## Requirements
 
-### Requirement 1: Multi-Channel Document Intake
+### Requirement 1: Multi-Channel Evidence Intake
 
-**User Story:** As a merchant, I want to submit dispute documents through multiple channels, so that I can use my preferred communication method without switching tools.
-
-#### Acceptance Criteria
-
-1. WHEN a merchant sends a WhatsApp message with attachments to the system number, THE Intake_System SHALL receive the message via Twilio API and store attachments in S3
-2. WHEN a merchant forwards an email to the system address, THE Intake_System SHALL receive the email via Amazon SES and extract all attachments to S3
-3. WHEN a merchant uploads files through a web interface, THE Intake_System SHALL accept the files and store them in S3
-4. WHEN documents are received, THE Intake_System SHALL create a Case record in DynamoDB with unique case identifier and timestamp
-5. WHEN documents are stored in S3, THE Intake_System SHALL enqueue a processing message to Amazon SQS with the case identifier
-
-### Requirement 2: Document Processing and Text Extraction
-
-**User Story:** As a merchant, I want the system to read all my documents regardless of format, so that I don't need to manually transcribe information from images or PDFs.
+**User Story:** As a merchant, I want to submit evidence through multiple channels, so that I can use my preferred communication method without switching tools.
 
 #### Acceptance Criteria
 
-1. WHEN a document is an image file (PNG, JPG, JPEG), THE Document_Processor SHALL apply Amazon Textract OCR to extract text content
-2. WHEN a document is a PDF file, THE Document_Processor SHALL apply Amazon Textract to extract text and preserve structure
-3. WHEN a document is a text file or email body, THE Document_Processor SHALL extract the text content directly
-4. WHEN text extraction completes, THE Document_Processor SHALL store the extracted text in DynamoDB linked to the source document
-5. WHEN text extraction fails, THE Document_Processor SHALL log the error and mark the document as requiring manual review
+1. WHEN a merchant forwards a WhatsApp conversation to the system, THE Intake_System SHALL receive and store all messages and attachments
+2. WHEN a merchant forwards an email to the system, THE Intake_System SHALL receive and store the email body and all attachments
+3. WHEN a merchant uploads files through a web interface, THE Intake_System SHALL accept and store all uploaded files
+4. WHEN files are received, THE Intake_System SHALL support PDF, JPEG, PNG, CSV, and TXT formats
+5. WHEN files exceed 25MB individually, THE Intake_System SHALL reject the file and notify the merchant
+6. WHEN a submission is received, THE Intake_System SHALL generate a unique case identifier and confirm receipt to the merchant within 5 seconds
 
-### Requirement 3: Fact Extraction from Documents
+### Requirement 2: Document Processing and Fact Extraction
 
-**User Story:** As a merchant, I want the system to automatically identify key facts from my documents, so that I don't need to manually highlight important information.
-
-#### Acceptance Criteria
-
-1. WHEN extracted text is available, THE Fact_Extractor SHALL identify order dates, amounts, tracking numbers, and delivery dates using Amazon Comprehend entity recognition
-2. WHEN customer communications are processed, THE Fact_Extractor SHALL extract customer statements and complaint reasons using Bedrock LLM
-3. WHEN multiple documents contain conflicting information, THE Fact_Extractor SHALL flag the conflict for merchant review
-4. WHEN facts are extracted, THE Fact_Extractor SHALL store structured fact records in DynamoDB with source document references
-5. WHEN a required fact type is not found in any document, THE Fact_Extractor SHALL mark it as missing in the case metadata
-
-### Requirement 4: Timeline Generation
-
-**User Story:** As a merchant, I want an automatic chronological timeline of events, so that I can clearly demonstrate the sequence of what happened.
+**User Story:** As a merchant, I want the system to automatically read my documents and extract key facts, so that I don't have to manually enter information.
 
 #### Acceptance Criteria
 
-1. WHEN all facts are extracted, THE Timeline_Builder SHALL construct a chronological sequence of events from order creation to dispute filing
-2. WHEN events have timestamps, THE Timeline_Builder SHALL sort them in ascending chronological order
-3. WHEN events lack precise timestamps, THE Timeline_Builder SHALL infer relative ordering from document context
-4. WHEN the timeline is complete, THE Timeline_Builder SHALL generate a one-page formatted timeline document with event descriptions and source references
-5. WHEN timeline generation completes, THE Timeline_Builder SHALL store the timeline in S3 and update the case status in DynamoDB
+1. WHEN a document contains printed or handwritten text, THE OCR_Service SHALL extract the text with at least 95% accuracy for printed text
+2. WHEN extracted text is available, THE Extraction_Engine SHALL identify order numbers, transaction IDs, dates, monetary amounts, tracking numbers, and customer names
+3. WHEN a document contains delivery confirmation, THE Extraction_Engine SHALL extract delivery date, recipient name, and signature status
+4. WHEN customer communications are provided, THE Extraction_Engine SHALL identify customer statements, complaints, and requests
+5. WHEN extraction completes, THE Extraction_Engine SHALL structure all facts into a standardized schema within 30 seconds per document
 
-### Requirement 5: Dispute Type Classification and Playbook Selection
+### Requirement 3: Timeline Construction
 
-**User Story:** As a merchant, I want the system to identify what type of dispute I'm facing, so that it can check for the right evidence.
-
-#### Acceptance Criteria
-
-1. WHEN a case is processed, THE Completeness_Checker SHALL classify the dispute into one of four types: Item Not Received, Not as Described, Unauthorized/Fraud, or Refund Not Processed
-2. WHEN the dispute type is identified, THE Completeness_Checker SHALL load the corresponding playbook from the system configuration
-3. WHEN the dispute type cannot be determined with high confidence, THE Completeness_Checker SHALL flag the case for merchant clarification
-4. WHEN multiple dispute types apply, THE Completeness_Checker SHALL select the primary type and note secondary concerns
-5. WHEN the playbook is loaded, THE Completeness_Checker SHALL store the dispute type and playbook reference in DynamoDB
-
-### Requirement 6: Evidence Completeness Validation
-
-**User Story:** As a merchant, I want to know if I'm missing critical evidence before submission, so that I can gather it and avoid automatic rejection.
+**User Story:** As a merchant, I want a clear chronological timeline of events, so that I can understand the dispute sequence at a glance.
 
 #### Acceptance Criteria
 
-1. WHEN a playbook is selected, THE Completeness_Checker SHALL compare extracted facts and documents against the playbook's required evidence list
-2. WHEN required evidence is present, THE Completeness_Checker SHALL mark it as satisfied with document references
-3. WHEN required evidence is missing, THE Completeness_Checker SHALL create a missing evidence alert with description and importance level
-4. WHEN all required evidence is present, THE Completeness_Checker SHALL mark the case as submission-ready
-5. WHEN critical evidence is missing, THE Completeness_Checker SHALL mark the case as incomplete and notify the merchant with specific gaps
+1. WHEN facts are extracted from multiple documents, THE Timeline_Builder SHALL construct a chronological sequence of all events
+2. WHEN events have timestamps, THE Timeline_Builder SHALL order events by timestamp with earliest first
+3. WHEN events lack precise timestamps, THE Timeline_Builder SHALL infer logical ordering based on event types
+4. WHEN the timeline is complete, THE Timeline_Builder SHALL include order placement, payment, shipment, delivery, complaint, and merchant actions
+5. WHEN timeline construction completes, THE Timeline_Builder SHALL generate a one-page visual timeline within 10 seconds
 
-### Requirement 7: Policy-Grounded Response Drafting
+### Requirement 4: Dispute Type Classification
 
-**User Story:** As a merchant, I want an automatically written response that references my evidence and follows dispute resolution policies, so that I don't need to write it from scratch or worry about missing key points.
-
-#### Acceptance Criteria
-
-1. WHEN a case is ready for drafting, THE Response_Drafter SHALL retrieve relevant policy sections from Amazon OpenSearch vector store using the dispute type and facts as query
-2. WHEN policy sections are retrieved, THE Response_Drafter SHALL use Amazon Bedrock LLM to generate a response that addresses each dispute point with evidence references
-3. WHEN generating the response, THE Response_Drafter SHALL ensure every factual statement links to a specific exhibit or document
-4. WHEN the response is complete, THE Response_Drafter SHALL format it as a professional business letter with proper structure
-5. WHEN drafting completes, THE Response_Drafter SHALL store the response document in S3 and update the case status in DynamoDB
-
-### Requirement 8: Evidence Pack Assembly
-
-**User Story:** As a merchant, I want a complete, organized package ready to submit, so that I can send it directly to the payment processor without additional formatting work.
+**User Story:** As a merchant, I want the system to identify the dispute type, so that the correct evidence requirements are applied.
 
 #### Acceptance Criteria
 
-1. WHEN all components are ready, THE Evidence_Pack generator SHALL create an exhibit index listing all attachments with labels and descriptions
-2. WHEN attachments are processed, THE Evidence_Pack generator SHALL rename files with clear exhibit labels (Exhibit_A_Invoice, Exhibit_B_Tracking, etc.)
-3. WHEN the response letter references exhibits, THE Evidence_Pack generator SHALL ensure exhibit labels match the index
-4. WHEN all documents are prepared, THE Evidence_Pack generator SHALL bundle the response letter, timeline, exhibit index, and labeled attachments into a single ZIP file
-5. WHEN the Evidence_Pack is complete, THE Evidence_Pack generator SHALL store it in S3 and provide a download link to the merchant
+1. WHEN a case is created, THE Completeness_Checker SHALL classify the dispute as Item_Not_Received, Not_As_Described, Unauthorized_Fraud, or Refund_Not_Processed
+2. WHEN customer statements mention non-delivery, THE Completeness_Checker SHALL classify as Item_Not_Received
+3. WHEN customer statements mention product differences or defects, THE Completeness_Checker SHALL classify as Not_As_Described
+4. WHEN customer statements deny authorization or claim fraud, THE Completeness_Checker SHALL classify as Unauthorized_Fraud
+5. WHEN customer statements mention pending refunds, THE Completeness_Checker SHALL classify as Refund_Not_Processed
+6. WHEN classification confidence is below 80%, THE Completeness_Checker SHALL flag the case for human review
 
-### Requirement 9: Privacy and PII Redaction
+### Requirement 5: Evidence Completeness Validation
 
-**User Story:** As a merchant, I want sensitive customer information automatically redacted where appropriate, so that I comply with privacy regulations while still proving my case.
-
-#### Acceptance Criteria
-
-1. WHEN documents are processed, THE Privacy_Redactor SHALL use Amazon Comprehend to detect PII including full credit card numbers, social security numbers, and passport numbers
-2. WHEN PII is detected in evidence documents, THE Privacy_Redactor SHALL redact it by replacing with masked values (e.g., **** **** **** 1234)
-3. WHEN PII is essential to the case (e.g., last 4 digits of card, customer name), THE Privacy_Redactor SHALL preserve it based on redaction rules
-4. WHEN redaction is applied, THE Privacy_Redactor SHALL create both redacted and unredacted versions of documents
-5. WHEN the Evidence_Pack is generated, THE Privacy_Redactor SHALL include only appropriately redacted documents by default
-
-### Requirement 10: Confidence Scoring and Human Review Flagging
-
-**User Story:** As a merchant, I want to know when the system is uncertain about my case, so that I can review it manually before submission for high-stakes disputes.
+**User Story:** As a merchant, I want to know if I'm missing critical evidence before submission, so that I can avoid automatic loss due to incomplete documentation.
 
 #### Acceptance Criteria
 
-1. WHEN fact extraction completes, THE Orchestrator SHALL calculate a confidence score based on evidence completeness, fact consistency, and dispute type match
-2. WHEN the confidence score is below a threshold, THE Orchestrator SHALL flag the case for human review
-3. WHEN critical evidence is missing, THE Orchestrator SHALL automatically flag the case regardless of other confidence factors
-4. WHEN a case is flagged for review, THE Orchestrator SHALL update the case status in DynamoDB and notify the merchant
-5. WHEN a merchant reviews and approves a flagged case, THE Orchestrator SHALL proceed with Evidence_Pack generation
+1. WHEN a dispute is classified as Item_Not_Received, THE Completeness_Checker SHALL require proof of delivery, tracking information, and shipping confirmation
+2. WHEN a dispute is classified as Not_As_Described, THE Completeness_Checker SHALL require product listing, product images, and customer communication
+3. WHEN a dispute is classified as Unauthorized_Fraud, THE Completeness_Checker SHALL require transaction authorization, IP address logs, and delivery confirmation
+4. WHEN a dispute is classified as Refund_Not_Processed, THE Completeness_Checker SHALL require refund transaction records and refund policy documentation
+5. WHEN required evidence is missing, THE Completeness_Checker SHALL generate a specific list of missing items with descriptions
+6. WHEN all required evidence is present, THE Completeness_Checker SHALL mark the case as submission-ready
 
-### Requirement 11: Case Tracking and Status Management
+### Requirement 6: Policy-Grounded Response Drafting
 
-**User Story:** As a merchant, I want to track the status of my dispute cases, so that I know what stage each case is in and what actions are needed.
-
-#### Acceptance Criteria
-
-1. WHEN a case is created, THE Orchestrator SHALL initialize the case status as "Intake_Complete" in DynamoDB
-2. WHEN processing stages complete, THE Orchestrator SHALL update the case status to reflect current stage (Processing, Facts_Extracted, Timeline_Generated, Response_Drafted, Pack_Ready)
-3. WHEN errors occur, THE Orchestrator SHALL update the case status to "Error" with error details
-4. WHEN a case requires merchant action, THE Orchestrator SHALL update the status to "Awaiting_Merchant_Input" with specific action items
-5. WHEN a merchant queries case status, THE Orchestrator SHALL return the current status, completion percentage, and next steps
-
-### Requirement 12: Notification and Delivery
-
-**User Story:** As a merchant, I want to be notified when my Evidence Pack is ready, so that I can download and submit it promptly.
+**User Story:** As a merchant, I want a professionally written response that references my evidence, so that I can submit a compelling case without writing expertise.
 
 #### Acceptance Criteria
 
-1. WHEN an Evidence_Pack is complete, THE Orchestrator SHALL send a notification to the merchant via their preferred channel (WhatsApp, email, or SMS)
-2. WHEN sending notifications, THE Orchestrator SHALL include the case identifier, dispute type, and download link
-3. WHEN a case requires merchant input, THE Orchestrator SHALL send a notification with specific missing items or actions needed
-4. WHEN errors occur during processing, THE Orchestrator SHALL notify the merchant with error details and support contact information
-5. WHEN a notification is sent, THE Orchestrator SHALL log the notification event in CloudWatch for audit purposes
+1. WHEN evidence is complete, THE Response_Drafter SHALL generate a dispute response letter within 60 seconds
+2. WHEN drafting responses, THE Response_Drafter SHALL reference specific evidence documents for each factual claim
+3. WHEN drafting responses, THE Response_Drafter SHALL cite relevant merchant policies and platform guidelines
+4. WHEN drafting responses, THE Response_Drafter SHALL structure the response with introduction, facts, evidence summary, and conclusion sections
+5. WHEN customer claims are contradicted by evidence, THE Response_Drafter SHALL explicitly highlight the contradiction with evidence references
+6. WHEN drafting responses, THE Response_Drafter SHALL maintain professional tone and avoid emotional language
 
-### Requirement 13: Monitoring and Audit Trail
+### Requirement 7: Evidence Pack Generation
 
-**User Story:** As a system administrator, I want comprehensive logging and monitoring, so that I can troubleshoot issues and maintain compliance audit trails.
-
-#### Acceptance Criteria
-
-1. WHEN any component processes a case, THE component SHALL log processing events to CloudWatch with case identifier, timestamp, and action details
-2. WHEN documents are accessed or modified, THE Orchestrator SHALL log the access event to CloudTrail with user identity and action type
-3. WHEN errors occur, THE component SHALL log error details to CloudWatch with stack traces and context information
-4. WHEN PII redaction is applied, THE Privacy_Redactor SHALL log redaction events without logging the actual PII values
-5. WHEN cases are created or completed, THE Orchestrator SHALL emit CloudWatch metrics for monitoring processing times and success rates
-
-### Requirement 14: Playbook Configuration and Management
-
-**User Story:** As a system administrator, I want to configure and update dispute playbooks, so that the system adapts to changing payment processor requirements.
+**User Story:** As a merchant, I want a complete submission package with all documents properly organized, so that I can submit immediately without additional formatting.
 
 #### Acceptance Criteria
 
-1. WHEN a playbook is created, THE system SHALL store it in DynamoDB with dispute type, required evidence list, and response templates
-2. WHEN a playbook is updated, THE system SHALL version the playbook and preserve previous versions for audit purposes
-3. WHEN processing a case, THE Completeness_Checker SHALL use the latest active version of the relevant playbook
-4. WHEN policy documents are updated, THE system SHALL re-index them in Amazon OpenSearch for vector search
-5. WHEN a playbook references policy sections, THE Response_Drafter SHALL retrieve the current policy text from OpenSearch
+1. WHEN a case is submission-ready, THE Evidence_Pack SHALL include a response letter, one-page timeline, exhibit index, and all supporting attachments
+2. WHEN generating the exhibit index, THE Evidence_Pack SHALL list all attachments with exhibit numbers, descriptions, and page counts
+3. WHEN labeling attachments, THE Evidence_Pack SHALL apply consistent naming with exhibit numbers and descriptive titles
+4. WHEN generating the package, THE Evidence_Pack SHALL produce a single ZIP file containing all documents
+5. WHEN the package is complete, THE Evidence_Pack SHALL generate a submission checklist confirming all required components are included
 
-### Requirement 15: Error Handling and Recovery
+### Requirement 8: Privacy and PII Redaction
 
-**User Story:** As a merchant, I want the system to handle errors gracefully, so that temporary failures don't lose my case data or require me to restart from scratch.
+**User Story:** As a merchant, I want sensitive customer information automatically redacted, so that I comply with privacy regulations while submitting evidence.
 
 #### Acceptance Criteria
 
-1. WHEN a processing step fails, THE Orchestrator SHALL retry the operation up to three times with exponential backoff
-2. WHEN retries are exhausted, THE Orchestrator SHALL move the case to error status and preserve all successfully processed data
-3. WHEN SQS message processing fails, THE message SHALL return to the queue for reprocessing after visibility timeout
-4. WHEN a case is in error status, THE merchant SHALL be able to trigger manual reprocessing from the last successful step
-5. WHEN critical AWS services are unavailable, THE Orchestrator SHALL queue operations for retry when services recover
+1. WHEN documents are processed, THE Redaction_Service SHALL identify credit card numbers, social security numbers, bank account numbers, and passport numbers
+2. WHEN PII is detected, THE Redaction_Service SHALL replace sensitive data with masked values preserving format
+3. WHEN customer names appear in non-essential contexts, THE Redaction_Service SHALL redact names while preserving them in delivery confirmations
+4. WHEN redaction is applied, THE Redaction_Service SHALL maintain document readability and evidence value
+5. WHEN redaction completes, THE Redaction_Service SHALL generate a redaction log listing all masked fields
+
+### Requirement 9: Human Review Escalation
+
+**User Story:** As a merchant, I want high-risk or uncertain cases flagged for review, so that I can verify critical submissions before they go out.
+
+#### Acceptance Criteria
+
+1. WHEN classification confidence is below 80%, THE Case_Tracker SHALL flag the case for human review
+2. WHEN evidence contradictions are detected, THE Case_Tracker SHALL flag the case for human review
+3. WHEN dispute amount exceeds $1000, THE Case_Tracker SHALL flag the case for human review
+4. WHEN a case is flagged, THE Case_Tracker SHALL notify the merchant with specific reasons for escalation
+5. WHEN a merchant reviews a flagged case, THE Case_Tracker SHALL allow approval, rejection, or modification before final submission
+
+### Requirement 10: Case Tracking and Audit Trail
+
+**User Story:** As a merchant, I want to track all my dispute cases and see processing history, so that I can monitor status and maintain records.
+
+#### Acceptance Criteria
+
+1. WHEN a case is created, THE Case_Tracker SHALL record case ID, creation timestamp, dispute type, and merchant identifier
+2. WHEN case processing occurs, THE Case_Tracker SHALL log all state transitions with timestamps and actor information
+3. WHEN a merchant queries cases, THE Case_Tracker SHALL return all cases with current status, dispute type, and submission deadline
+4. WHEN a case is completed, THE Case_Tracker SHALL retain all documents and logs for at least 7 years
+5. WHEN audit logs are requested, THE Case_Tracker SHALL provide complete processing history including all system actions and user interactions
+
+### Requirement 11: Reliable Asynchronous Processing
+
+**User Story:** As a merchant, I want the system to process my submission reliably even during high load, so that I don't lose evidence or miss deadlines.
+
+#### Acceptance Criteria
+
+1. WHEN a submission is received, THE Intake_System SHALL enqueue the case for processing within 2 seconds
+2. WHEN processing fails, THE Intake_System SHALL retry up to 3 times with exponential backoff
+3. WHEN all retries fail, THE Intake_System SHALL move the case to a dead-letter queue and notify system administrators
+4. WHEN processing completes successfully, THE Intake_System SHALL update case status and notify the merchant
+5. WHEN system load is high, THE Intake_System SHALL continue accepting submissions and process them in order received
+
+### Requirement 12: Performance and Scalability
+
+**User Story:** As a merchant, I want fast processing regardless of system load, so that I can respond to disputes quickly.
+
+#### Acceptance Criteria
+
+1. WHEN a case contains up to 10 documents, THE system SHALL complete end-to-end processing within 2 minutes
+2. WHEN a case contains up to 50 documents, THE system SHALL complete end-to-end processing within 5 minutes
+3. WHEN system load increases, THE system SHALL maintain processing times within 20% of baseline performance
+4. WHEN concurrent cases are processed, THE system SHALL handle at least 100 simultaneous cases without degradation
+5. WHEN storage grows, THE system SHALL maintain query response times under 1 second for case retrieval
+
